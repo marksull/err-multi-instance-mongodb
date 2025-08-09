@@ -1,10 +1,17 @@
-from errbot import BotPlugin, botcmd
+"""
+MongoDB Command Filter Plugin for Errbot
+This plugin uses MongoDB to filter commands across multiple instances of Errbot.
+It ensures that only the first instance that receives a command will execute it,
+while later instances will assume the command has already been executed.
+"""
+import uuid
+import zlib
+
+from errbot import botcmd
+from errbot import BotPlugin
+from errbot import cmdfilter
 from pymongo import MongoClient
 from pymongo.uri_parser import parse_uri
-import os
-import zlib
-import uuid
-
 
 ENV_VAR_MONGODB_URI = "MULTI_INSTANCE_MONGODB_URI"
 
@@ -36,39 +43,44 @@ class MongoDBCmdFilterPlugin(BotPlugin):
 
         self.mongo_client = MongoClient(mongo_uri)
         self.collection = self.mongo_client.get_database()[collection]
-        self._bot.add_cmdfilter(self.mongodb_cmd_filter)
 
     def deactivate(self):
         """
         Deactivate the plugin, removing the command filter and closing the MongoDB connection.
         """
-        self._bot.remove_cmdfilter(self.mongodb_cmd_filter)
         self.mongo_client.close()
         super().deactivate()
 
+    @cmdfilter
     def mongodb_cmd_filter(self, msg, cmd, args, dry_run):
         """
-        Command filter that determines whether to allow a command to proceed based on its content.
+        Command filter that determines whether to allow a command to proceed.
+
+        If this instance is able to store the command in MongoDB, this instance
+        must be first and will be entitled to execute the command. Any later
+        instances will hit a duplicate key error and as a result will assume that
+        the command has been executed by the first instance.
         """
         try:
-            self.collection.insert_one(
-                {
-                    "_id": zlib.crc32(
-                        f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}|{dry_run}".encode(
-                            "utf-8"
-                        )
-                    ),
-                    "flow": msg.flow.name if msg.flow else None,
-                    "instance_id": self.instance_id,
-                }
-            )
+            if not dry_run:
+                self.collection.insert_one(
+                    {
+                        "_id": zlib.crc32(
+                            f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}".encode(
+                                "utf-8"
+                            )
+                        ),
+                        "flow": msg.flow.name if msg.flow else None,
+                        "instance_id": self.instance_id,
+                    }
+                )
         except self.mongo_client.errors.DuplicateKeyError:
             return None, None, None
 
         return cmd, args, dry_run
 
     @botcmd
-    def show_instance_id(self, msg, args):
+    def show_instance_id(self, _msg, _args):
         """
         Display the unique instance ID for this plugin instance.
         """
