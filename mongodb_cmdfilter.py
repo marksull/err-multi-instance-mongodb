@@ -55,7 +55,8 @@ class MongoDBCmdFilterPlugin(BotPlugin):
                         f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}|{dry_run}".encode(
                             "utf-8"
                         )
-                    )
+                    ),
+                    "flow": msg.flow.name if msg.flow else None,
                 }
             )
         except self.mongo_client.errors.DuplicateKeyError:
