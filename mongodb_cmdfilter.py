@@ -3,6 +3,7 @@ from pymongo import MongoClient
 from pymongo.uri_parser import parse_uri
 import os
 import zlib
+import uuid
 
 
 ENV_VAR_MONGODB_URI = "MULTI_INSTANCE_MONGODB_URI"
@@ -13,6 +14,7 @@ class MongoDBCmdFilterPlugin(BotPlugin):
         super().__init__(bot_config)
         self.mongo_client = None
         self.collection = None
+        self.instance_id = str(uuid.uuid4())
 
     def activate(self):
         super().activate()
@@ -57,6 +59,7 @@ class MongoDBCmdFilterPlugin(BotPlugin):
                         )
                     ),
                     "flow": msg.flow.name if msg.flow else None,
+                    "instance_id": self.instance_id,
                 }
             )
         except self.mongo_client.errors.DuplicateKeyError:
