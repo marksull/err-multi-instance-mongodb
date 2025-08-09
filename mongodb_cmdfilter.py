@@ -4,37 +4,49 @@ from pymongo.uri_parser import parse_uri
 import os
 
 
+ENV_VAR_MONGODB_URI = "MULTI_INSTANCE_MONGODB_URI"
+
+
 class MongoDBCmdFilterPlugin(BotPlugin):
+    def __init__(self, bot_config):
+        super().__init__(bot_config)
+        self.mongo_client = None
+        self.collection = None
+
     def activate(self):
         super().activate()
 
         mongo_uri = self.bot_config.MONGODB_URI
 
         if not mongo_uri:
-            raise ValueError("MONGODB_URI must be set in the bot configuration.")
+            raise ValueError(
+                f"{ENV_VAR_MONGODB_URI} must be set in the bot configuration."
+            )
 
         parsed = parse_uri(mongo_uri)
         collection = parsed.get("collection")
 
         if not collection:
             raise ValueError(
-                "MONGODB_URI must specify both database and collection, e.g. /<db>.<collection>"
+                f"{ENV_VAR_MONGODB_URI} must specify both database and collection, e.g. /<db>.<collection>"
             )
 
         self.mongo_client = MongoClient(mongo_uri)
         self.collection = self.mongo_client.get_database()[collection]
-        self.bot.add_cmdfilter(self.mongodb_cmdfilter)
+        self._bot.add_cmdfilter(self.mongodb_cmd_filter)
 
     def deactivate(self):
         """
         Deactivate the plugin, removing the command filter and closing the MongoDB connection.
         """
-        self.bot.remove_cmdfilter(self.mongodb_cmdfilter)
+        self._bot.remove_cmdfilter(self.mongodb_cmd_filter)
         self.mongo_client.close()
         super().deactivate()
 
-    def mongodb_cmdfilter(self, msg, cmd, args, dry_run):
-        # Store the message in MongoDB for coordination
+    def mongodb_cmd_filter(self, msg, cmd, args, dry_run):
+        """
+        Command filter that determines whether to allow a command to proceed based on its content.
+        """
         self.collection.insert_one(
             {
                 "text": str(msg.body),
