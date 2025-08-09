@@ -2,6 +2,7 @@ from errbot import BotPlugin
 from pymongo import MongoClient
 from pymongo.uri_parser import parse_uri
 import os
+import zlib
 
 
 ENV_VAR_MONGODB_URI = "MULTI_INSTANCE_MONGODB_URI"
@@ -47,15 +48,17 @@ class MongoDBCmdFilterPlugin(BotPlugin):
         """
         Command filter that determines whether to allow a command to proceed based on its content.
         """
-        self.collection.insert_one(
-            {
-                "text": str(msg.body),
-                "sender": str(msg.frm),
-                "to": str(msg.to),
-                "cmd": cmd,
-                "args": args,
-                "dry_run": dry_run,
-            }
-        )
-        # Always allow the command to proceed (coordination logic can be added later)
+        try:
+            self.collection.insert_one(
+                {
+                    "_id": zlib.crc32(
+                        f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}|{dry_run}".encode(
+                            "utf-8"
+                        )
+                    )
+                }
+            )
+        except self.mongo_client.errors.DuplicateKeyError:
+            return None, None, None
+
         return cmd, args, dry_run
