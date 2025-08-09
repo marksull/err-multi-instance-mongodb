@@ -44,7 +44,13 @@ class MongoDBCmdFilterPlugin(BotPlugin):
             )
 
         self.mongo_client = MongoClient(mongo_uri)
-        self.collection = self.mongo_client.get_database()[collection]
+        db = self.mongo_client.get_database()
+        if collection not in db.list_collection_names():
+            # Create collection and TTL index
+            self.collection = db.create_collection(collection)
+            self.collection.create_index("datetime", expireAfterSeconds=3600)
+        else:
+            self.collection = db[collection]
 
     def deactivate(self):
         """
