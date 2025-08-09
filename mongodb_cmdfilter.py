@@ -6,6 +6,8 @@ while later instances will assume the command has already been executed.
 """
 import uuid
 import zlib
+from datetime import datetime
+from datetime import timezone
 
 from errbot import botcmd
 from errbot import BotPlugin
@@ -72,6 +74,7 @@ class MongoDBCmdFilterPlugin(BotPlugin):
                         ),
                         "flow": msg.flow.name if msg.flow else None,
                         "instance_id": self.instance_id,
+                        "datetime": datetime.now(timezone.utc),
                     }
                 )
         except self.mongo_client.errors.DuplicateKeyError:
