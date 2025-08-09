@@ -1,4 +1,4 @@
-from errbot import BotPlugin
+from errbot import BotPlugin, botcmd
 from pymongo import MongoClient
 from pymongo.uri_parser import parse_uri
 import os
@@ -66,3 +66,10 @@ class MongoDBCmdFilterPlugin(BotPlugin):
             return None, None, None
 
         return cmd, args, dry_run
+
+    @botcmd
+    def show_instance_id(self, msg, args):
+        """
+        Display the unique instance ID for this plugin instance.
+        """
+        return f"Instance ID: {self.instance_id}"
