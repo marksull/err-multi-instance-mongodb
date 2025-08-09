@@ -1,0 +1,9 @@
+[Core]
+Name = MultiInstanceMongoDB
+Module = MultiInstanceMongoDB
+
+[Documentation]
+Description = Multi Instance MongoDB Plugin
+
+[Python]
+Version = 3.7.0

@@ -18,7 +18,7 @@ from pymongo.uri_parser import parse_uri
 ENV_VAR_MONGODB_URI = "MULTI_INSTANCE_MONGODB_URI"
 
 
-class MongoDBCmdFilterPlugin(BotPlugin):
+class MultiInstanceMongoDBPlugin(BotPlugin):
     def __init__(self, bot_config):
         super().__init__(bot_config)
         self.mongo_client = None
