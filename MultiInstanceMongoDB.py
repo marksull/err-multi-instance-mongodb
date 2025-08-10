@@ -17,6 +17,7 @@ from pymongo.uri_parser import parse_uri
 
 MONGODB_URI = "BOT_MULTI_INSTANCE_MONGODB_URI"
 MONGODB_INDEX_TTL = "BOT_MULTI_INSTANCE_INDEX_TTL"
+INDEX_NAME = "datetime_ttl"
 
 
 class MultiInstanceMongoDBPlugin(BotPlugin):
@@ -52,7 +53,15 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         else:
             self.collection = db[collection]
 
-        self.collection.create_index("datetime", expireAfterSeconds=ttl)
+        for idx in self.collection.list_indexes():
+            if idx.get('name') == INDEX_NAME:
+                if idx.get('expireAfterSeconds') != ttl:
+                    self.collection.drop_index(INDEX_NAME)
+                    self.collection.create_index("datetime", expireAfterSeconds=ttl, name=INDEX_NAME)
+                break
+        else:
+            self.collection.create_index("datetime", expireAfterSeconds=ttl, name=INDEX_NAME)
+
 
     def deactivate(self):
         """
