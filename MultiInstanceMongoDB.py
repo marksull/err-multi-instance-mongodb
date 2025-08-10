@@ -5,7 +5,6 @@ It ensures that only the first instance that receives a command will execute it,
 while later instances will assume the command has already been executed.
 """
 import uuid
-import zlib
 from datetime import datetime
 from datetime import timezone
 
@@ -69,25 +68,49 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         instances will hit a duplicate key error and as a result will assume that
         the command has been executed by the first instance.
         """
-        try:
-            if not dry_run:
+        if not dry_run:
 
-                flow, _ = self._bot.flow_executor.check_inflight_flow_triggered(cmd, msg.frm)
+            flow, _ = self._bot.flow_executor.check_inflight_flow_triggered(cmd, msg.frm)
+            message_id = msg.extras.get("message_id") or f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}".encode("utf-8")
 
-                message_id = msg.extras.get("message_id") or f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}".encode(
-                                "utf-8"
-                            )
+            if not flow:
+                try:
+                    self.collection.insert_one(
+                            {
+                                "_id"        : message_id,
+                                "instance_id": self.instance_id,
+                                "datetime"   : datetime.now(timezone.utc),
+                            }
+                    )
 
-                self.collection.insert_one(
+                except DuplicateKeyError:
+                    return None, None, None
+
+                return msg, cmd, args
+
+
+            result = self.collection.update_one(
+                {"$and": [
                     {
-                        "_id": message_id,
-                        # "flow": msg.flow.name if msg.flow else None,
-                        "instance_id": self.instance_id,
-                        "datetime": datetime.now(timezone.utc),
-                    }
-                )
-        except DuplicateKeyError:
-            return None, None, None
+                        "flow_name" : flow.name,
+                        "message_id": message_id,
+                    },
+                    {"$or": [
+                        {"instance_id": self.instance_id},
+                        {"instance_id": {"$exists": False}}
+                    ]}
+                ]},
+                    {
+                        "$setOnInsert": {
+                            "instance_id": self.instance_id,
+                            "datetime"   : datetime.now(timezone.utc),
+                        }
+                    },
+                upsert=True
+            )
+
+            if result.matched_count == 0 and result.upserted_id is None:
+                return None, None, None
 
         return msg, cmd, args
 
