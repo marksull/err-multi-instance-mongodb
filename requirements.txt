@@ -1,2 +1,1 @@
 pymongo~=4.7.3
-errbot~=6.1.9

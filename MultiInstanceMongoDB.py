@@ -13,14 +13,15 @@ from errbot import botcmd
 from errbot import BotPlugin
 from errbot import cmdfilter
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError
 from pymongo.uri_parser import parse_uri
 
-ENV_VAR_MONGODB_URI = "MULTI_INSTANCE_MONGODB_URI"
+ENV_VAR_MONGODB_URI = "BOT_MULTI_INSTANCE_MONGODB_URI"
 
 
 class MultiInstanceMongoDBPlugin(BotPlugin):
-    def __init__(self, bot_config):
-        super().__init__(bot_config)
+    def __init__(self, bot, name=None):
+        super().__init__(bot, name)
         self.mongo_client = None
         self.collection = None
         self.instance_id = str(uuid.uuid4())
@@ -28,11 +29,10 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
     def activate(self):
         super().activate()
 
-        mongo_uri = self.bot_config.MONGODB_URI
-
+        mongo_uri =  getattr(self.bot_config, ENV_VAR_MONGODB_URI, None)
         if not mongo_uri:
             raise ValueError(
-                f"{ENV_VAR_MONGODB_URI} must be set in the bot configuration."
+                    f"{ENV_VAR_MONGODB_URI} must be set in the bot configuration."
             )
 
         parsed = parse_uri(mongo_uri)
@@ -40,7 +40,7 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
 
         if not collection:
             raise ValueError(
-                f"{ENV_VAR_MONGODB_URI} must specify both database and collection, e.g. /<db>.<collection>"
+                    f"{ENV_VAR_MONGODB_URI} must specify both database and collection, e.g. /<db>.<collection>"
             )
 
         self.mongo_client = MongoClient(mongo_uri)
@@ -71,22 +71,25 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         """
         try:
             if not dry_run:
-                self.collection.insert_one(
-                    {
-                        "_id": zlib.crc32(
-                            f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}".encode(
+
+                flow, _ = self._bot.flow_executor.check_inflight_flow_triggered(cmd, msg.frm)
+
+                message_id = msg.extras.get("message_id") or f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}".encode(
                                 "utf-8"
                             )
-                        ),
-                        "flow": msg.flow.name if msg.flow else None,
+
+                self.collection.insert_one(
+                    {
+                        "_id": message_id,
+                        # "flow": msg.flow.name if msg.flow else None,
                         "instance_id": self.instance_id,
                         "datetime": datetime.now(timezone.utc),
                     }
                 )
-        except self.mongo_client.errors.DuplicateKeyError:
+        except DuplicateKeyError:
             return None, None, None
 
-        return cmd, args, dry_run
+        return msg, cmd, args
 
     @botcmd
     def show_instance_id(self, _msg, _args):
