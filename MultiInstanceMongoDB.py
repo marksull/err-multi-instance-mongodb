@@ -15,7 +15,8 @@ from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from pymongo.uri_parser import parse_uri
 
-ENV_VAR_MONGODB_URI = "BOT_MULTI_INSTANCE_MONGODB_URI"
+MONGODB_URI = "BOT_MULTI_INSTANCE_MONGODB_URI"
+MONGODB_INDEX_TTL = "BOT_MULTI_INSTANCE_INDEX_TTL"
 
 
 class MultiInstanceMongoDBPlugin(BotPlugin):
@@ -28,28 +29,30 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
     def activate(self):
         super().activate()
 
-        mongo_uri =  getattr(self.bot_config, ENV_VAR_MONGODB_URI, None)
+        mongo_uri =  getattr(self.bot_config, MONGODB_URI, None)
         if not mongo_uri:
             raise ValueError(
-                    f"{ENV_VAR_MONGODB_URI} must be set in the bot configuration."
+                    f"{MONGODB_URI} must be set in the bot configuration."
             )
 
         parsed = parse_uri(mongo_uri)
         collection = parsed.get("collection")
 
+        ttl = getattr(self.bot_config, MONGODB_INDEX_TTL, 60)
+
         if not collection:
             raise ValueError(
-                    f"{ENV_VAR_MONGODB_URI} must specify both database and collection, e.g. /<db>.<collection>"
+                    f"{MONGODB_URI} must specify both database and collection, e.g. /<db>.<collection>"
             )
 
         self.mongo_client = MongoClient(mongo_uri)
         db = self.mongo_client.get_database()
         if collection not in db.list_collection_names():
-            # Create collection and TTL index
             self.collection = db.create_collection(collection)
-            self.collection.create_index("datetime", expireAfterSeconds=3600)
         else:
             self.collection = db[collection]
+
+        self.collection.create_index("datetime", expireAfterSeconds=ttl)
 
     def deactivate(self):
         """
