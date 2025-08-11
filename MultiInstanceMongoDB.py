@@ -39,7 +39,7 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         parsed = parse_uri(mongo_uri)
         collection = parsed.get("collection")
 
-        ttl = getattr(self.bot_config, MONGODB_INDEX_TTL, 60)
+        ttl = getattr(self.bot_config, MONGODB_INDEX_TTL, 60*5)
 
         if not collection:
             raise ValueError(
@@ -80,51 +80,61 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         instances will hit a duplicate key error and as a result will assume that
         the command has been executed by the first instance.
         """
-        if not dry_run:
+        if dry_run:
+            return msg, cmd, args
 
-            flow, _ = self._bot.flow_executor.check_inflight_flow_triggered(cmd, msg.frm)
-            message_id = msg.extras.get("message_id") or f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}".encode("utf-8")
+        flow_root = None
 
-            if not flow:
-                try:
-                    self.collection.insert_one(
-                            {
-                                "_id"        : message_id,
-                                "instance_id": self.instance_id,
-                                "datetime"   : datetime.now(timezone.utc),
-                            }
-                    )
+        # If the backend injects the message id into the "extras" dict, we will
+        # use it to differentiate the command, else we will create a key
+        # based on the message body, sender, recipient, command and arguments.
+        # Because the message contains no timing or message-specific uniqueness,
+        # if a user repeats the same command before the TTL has expired, it
+        # will be considered to be the same command and will not be executed again.
+        # To avoid this, the backend should inject a unique message id into the
+        # "extras" dict of the message.
+        message_id = msg.extras.get("message_id") or f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}".encode("utf-8")
 
-                except DuplicateKeyError:
+        # The flow is only attached to a message AFTER the flow has progressed
+        # past the filtering. So we need to do some pre-checks to determine if
+        # the command will trigger a new flow or is part of an existing flow
+        flow_inflight, _ = self._bot.flow_executor.check_inflight_flow_triggered(cmd, msg.frm)
+
+        if flow_inflight:
+            flow_root=flow_inflight.flow_root
+
+        if not flow_root:
+            # is the command going to trigger a new flow?
+            flow_root = cmd in self._bot.flow_executor.flow_roots
+
+        if flow_root:
+
+            flow_find = self.collection.find_one({"flow_root"  : flow_root})
+
+            if flow_find:
+                if flow_find.get("instance_id") == self.instance_id:
+                    # this instance owns the flow to we should run with it
+                    return msg, cmd, args
+                else:
+                    # another instance has already started with the flow, so we should not run with it
                     return None, None, None
 
-                return msg, cmd, args
 
-
-            result = self.collection.update_one(
-                {"$and": [
+        try:
+            self.collection.insert_one(
                     {
-                        "flow_name" : flow.name,
-                        "message_id": message_id,
-                    },
-                    {"$or": [
-                        {"instance_id": self.instance_id},
-                        {"instance_id": {"$exists": False}}
-                    ]}
-                ]},
-                    {
-                        "$setOnInsert": {
-                            "instance_id": self.instance_id,
-                            "datetime"   : datetime.now(timezone.utc),
-                        }
-                    },
-                upsert=True
+                        "_id"        : message_id,
+                        "instance_id": self.instance_id,
+                        "flow_root"  : flow_root,
+                        "datetime"   : datetime.now(timezone.utc),
+                    }
             )
 
-            if result.matched_count == 0 and result.upserted_id is None:
-                return None, None, None
+        except DuplicateKeyError:
+            return None, None, None
 
         return msg, cmd, args
+
 
     @botcmd
     def show_instance_id(self, _msg, _args):
