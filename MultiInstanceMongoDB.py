@@ -8,6 +8,7 @@ while later instances will assume the command has already been executed.
 
 import logging
 import uuid
+import zlib
 from datetime import datetime
 from datetime import timezone
 
@@ -119,9 +120,9 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         # will be considered to be the same command and will not be executed again.
         # To avoid this, the backend should inject a unique message id into the
         # "extras" dict of the message.
-        message_id = msg.extras.get(
-            "message_id"
-        ) or f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}".encode("utf-8")
+        message_id = msg.extras.get("message_id") or zlib.crc32(
+            f"{msg.body}|{msg.frm}|{msg.to}|{cmd}|{args}".encode("utf-8")
+        )
 
         # The flow is only attached to a message AFTER the flow has progressed
         # past the filtering. So we need to do some pre-checks to determine if
