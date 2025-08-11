@@ -17,7 +17,9 @@ from pymongo.uri_parser import parse_uri
 
 MONGODB_URI = "BOT_MULTI_INSTANCE_MONGODB_URI"
 MONGODB_INDEX_TTL = "BOT_MULTI_INSTANCE_INDEX_TTL"
+MONGODB_INDEX_FLOW_TTL = "BOT_MULTI_INSTANCE_INDEX_FLOW_TTL"
 INDEX_NAME = "datetime_ttl"
+INDEX_NAME_FLOW = "datetime_flow_ttl"
 
 
 class MultiInstanceMongoDBPlugin(BotPlugin):
@@ -39,7 +41,8 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         parsed = parse_uri(mongo_uri)
         collection = parsed.get("collection")
 
-        ttl = getattr(self.bot_config, MONGODB_INDEX_TTL, 60*5)
+        ttl = getattr(self.bot_config, MONGODB_INDEX_TTL, 30)
+        ttl_flow = getattr(self.bot_config, MONGODB_INDEX_FLOW_TTL, 60*5)
 
         if not collection:
             raise ValueError(
@@ -61,6 +64,15 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
                 break
         else:
             self.collection.create_index("datetime", expireAfterSeconds=ttl, name=INDEX_NAME)
+
+        for idx in self.collection.list_indexes():
+            if idx.get('name') == INDEX_NAME_FLOW:
+                if idx.get('expireAfterSeconds') != ttl_flow:
+                    self.collection.drop_index(INDEX_NAME_FLOW)
+                    self.collection.create_index("datetime_flow", expireAfterSeconds=ttl_flow, name=INDEX_NAME_FLOW)
+                break
+        else:
+            self.collection.create_index("datetime_flow", expireAfterSeconds=ttl_flow, name=INDEX_NAME_FLOW)
 
 
     def deactivate(self):
