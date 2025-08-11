@@ -128,9 +128,9 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
 
         if not flow_root:
             # Check if the command would trigger a new flow
-            for name, flow_root in self._bot.flow_executor.flow_roots.items():
-                if cmd in flow_root.auto_triggers:
-                    flow_root = name
+            for name, root in self._bot.flow_executor.flow_roots.items():
+                if cmd in root.auto_triggers:
+                    flow_root = cmd
                     break
 
         if flow_root:
