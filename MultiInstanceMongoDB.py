@@ -16,11 +16,12 @@ from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from pymongo.uri_parser import parse_uri
 
+INDEX_NAME = "datetime_ttl"
+INDEX_NAME_FLOW = "datetime_flow_ttl"
 MONGODB_URI = "BOT_MULTI_INSTANCE_MONGODB_URI"
 MONGODB_INDEX_TTL = "BOT_MULTI_INSTANCE_INDEX_TTL"
 MONGODB_INDEX_FLOW_TTL = "BOT_MULTI_INSTANCE_INDEX_FLOW_TTL"
-INDEX_NAME = "datetime_ttl"
-INDEX_NAME_FLOW = "datetime_flow_ttl"
+
 
 
 class MultiInstanceMongoDBPlugin(BotPlugin):
@@ -55,33 +56,29 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         else:
             self.collection = db[collection]
 
-        for idx in self.collection.list_indexes():
-            if idx.get("name") == INDEX_NAME:
-                if idx.get("expireAfterSeconds") != ttl:
-                    self.collection.drop_index(INDEX_NAME)
-                    self.collection.create_index(
-                        "datetime", expireAfterSeconds=ttl, name=INDEX_NAME
-                    )
-                break
-        else:
-            self.collection.create_index(
-                "datetime", expireAfterSeconds=ttl, name=INDEX_NAME
-            )
+        self.ensure_ttl_index("datetime", ttl, INDEX_NAME)
+        self.ensure_ttl_index("datetime_flow", ttl_flow, INDEX_NAME_FLOW)
 
+    def ensure_ttl_index(self, field, expire, name):
+        """
+        Ensure a TTL index exists on the given field with the specified expireAfterSeconds and name.
+        If the index exists but with a different expireAfterSeconds, it will be dropped and recreated.
+
+        Args:
+            field (str): The field on which to create the TTL index.
+            expire (int): The number of seconds after which documents should expire.
+            name (str): The name of the index.
+        """
         for idx in self.collection.list_indexes():
-            if idx.get("name") == INDEX_NAME_FLOW:
-                if idx.get("expireAfterSeconds") != ttl_flow:
-                    self.collection.drop_index(INDEX_NAME_FLOW)
+            if idx.get("name") == name:
+                if idx.get("expireAfterSeconds") != expire:
+                    self.collection.drop_index(name)
                     self.collection.create_index(
-                        "datetime_flow",
-                        expireAfterSeconds=ttl_flow,
-                        name=INDEX_NAME_FLOW,
+                        field, expireAfterSeconds=expire, name=name
                     )
                 break
         else:
-            self.collection.create_index(
-                "datetime_flow", expireAfterSeconds=ttl_flow, name=INDEX_NAME_FLOW
-            )
+            self.collection.create_index(field, expireAfterSeconds=expire, name=name)
 
     def deactivate(self):
         """
@@ -140,7 +137,8 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
                     # this instance owns the flow to we should run with it
                     return msg, cmd, args
                 else:
-                    # another instance has already started with the flow, so we should not run with it
+                    # another instance has already started with the flow,
+                    # so we should not run with it
                     return None, None, None
 
             try:
