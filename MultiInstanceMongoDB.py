@@ -6,6 +6,7 @@ It ensures that only the first instance that receives a command will execute it,
 while later instances will assume the command has already been executed.
 """
 
+import logging
 import uuid
 from datetime import datetime
 from datetime import timezone
@@ -30,6 +31,7 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         self.mongo_client = None
         self.collection = None
         self.instance_id = str(uuid.uuid4())
+        self.log = logging.getLogger(__name__)
 
     def activate(self):
         super().activate()
@@ -52,6 +54,7 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         self.mongo_client = MongoClient(mongo_uri)
         db = self.mongo_client.get_database()
         if collection not in db.list_collection_names():
+            self.log.info(f"Creating collection {collection} in database {db.name}")
             self.collection = db.create_collection(collection)
         else:
             self.collection = db[collection]
@@ -72,12 +75,18 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         for idx in self.collection.list_indexes():
             if idx.get("name") == name:
                 if idx.get("expireAfterSeconds") != expire:
+                    self.log.info(
+                        f"Dropping and recreating index {name} on field {field} with expireAfterSeconds={expire}"
+                    )
                     self.collection.drop_index(name)
                     self.collection.create_index(
                         field, expireAfterSeconds=expire, name=name
                     )
                 break
         else:
+            self.log.info(
+                f"Creating index {name} on field {field} with expireAfterSeconds={expire}"
+            )
             self.collection.create_index(field, expireAfterSeconds=expire, name=name)
 
     def deactivate(self):
@@ -144,10 +153,16 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
 
                 if flow_find.get("instance_id") == self.instance_id:
                     # this instance owns the flow to we should run with it
+                    self.log.info(
+                        f"This instance {self.instance_id} owns the flow {flow_root}, proceeding with command."
+                    )
                     return msg, cmd, args
                 else:
                     # another instance has already started with the flow,
                     # so we should not run with it
+                    self.log.info(
+                        f"Another instance {flow_find['instance_id']} owns the flow {flow_root}, skipping command."
+                    )
                     return None, None, None
 
             try:
@@ -159,9 +174,15 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
                         "datetime_flow": datetime.now(timezone.utc),
                     }
                 )
+                self.log.info(
+                    f"Inserted flow root {flow_root} for my instance {self.instance_id}"
+                )
                 return msg, cmd, args
 
             except DuplicateKeyError:
+                self.log.info(
+                    f"Duplicate key error for flow root {flow_root} for instance {self.instance_id}, skipping command."
+                )
                 return None, None, None
 
         try:
@@ -174,8 +195,14 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
             )
 
         except DuplicateKeyError:
+            self.log.info(
+                f"Duplicate key error for message {message_id} for instance {self.instance_id}, skipping command."
+            )
             return None, None, None
 
+        self.log.info(
+            f"Inserted message {message_id} for my instance {self.instance_id}, proceeding with command."
+        )
         return msg, cmd, args
 
     @botcmd
