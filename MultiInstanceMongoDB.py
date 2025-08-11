@@ -1,5 +1,6 @@
 """
 MongoDB Command Filter Plugin for Errbot
+
 This plugin uses MongoDB to filter commands across multiple instances of Errbot.
 It ensures that only the first instance that receives a command will execute it,
 while later instances will assume the command has already been executed.
@@ -21,7 +22,6 @@ INDEX_NAME_FLOW = "datetime_flow_ttl"
 MONGODB_URI = "BOT_MULTI_INSTANCE_MONGODB_URI"
 MONGODB_INDEX_TTL = "BOT_MULTI_INSTANCE_INDEX_TTL"
 MONGODB_INDEX_FLOW_TTL = "BOT_MULTI_INSTANCE_INDEX_FLOW_TTL"
-
 
 
 class MultiInstanceMongoDBPlugin(BotPlugin):
@@ -117,22 +117,31 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         # The flow is only attached to a message AFTER the flow has progressed
         # past the filtering. So we need to do some pre-checks to determine if
         # the command will trigger a new flow or is part of an existing flow
+
+        # Check if the command is part of an existing flow
         flow_inflight, _ = self._bot.flow_executor.check_inflight_flow_triggered(
             cmd, msg.frm
         )
 
         if flow_inflight:
-            flow_root = flow_inflight.flow_root
+            flow_root = flow_inflight.name
 
         if not flow_root:
-            # is the command going to trigger a new flow?
-            flow_root = cmd in self._bot.flow_executor.flow_roots
+            # Check if the command would trigger a new flow
+            for name, flow_root in self._bot.flow_executor.flow_roots.items():
+                if cmd in flow_root.auto_triggers:
+                    flow_root = name
+                    break
 
         if flow_root:
+
+            # We have a command that is part of a flow or will be starting
+            # a new flow
 
             flow_find = self.collection.find_one({"flow_root": flow_root})
 
             if flow_find:
+
                 if flow_find.get("instance_id") == self.instance_id:
                     # this instance owns the flow to we should run with it
                     return msg, cmd, args
