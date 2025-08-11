@@ -65,8 +65,8 @@ class MultiInstanceMongoDBPlugin(BotPlugin):
         If the index exists but with a different expireAfterSeconds, it will be dropped and recreated.
 
         Args:
-            field (str): The field on which to create the TTL index.
-            expire (int): The number of seconds after which documents should expire.
+            field (str): The field on which to create the TTL index
+            expire (int): The number of seconds after which documents should expire
             name (str): The name of the index.
         """
         for idx in self.collection.list_indexes():
